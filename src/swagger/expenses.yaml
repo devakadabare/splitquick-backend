@@ -1,0 +1,333 @@
+paths:
+  /api/expenses:
+    post:
+      tags:
+        - Expenses
+      summary: Create a new expense
+      description: Create a new expense with various split methods (equal, percentage, custom)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExpenseRequest'
+            examples:
+              equalSplit:
+                summary: Equal split among members
+                value:
+                  groupId: '123e4567-e89b-12d3-a456-426614174000'
+                  title: 'Dinner at Restaurant'
+                  amount: 150.00
+                  paidBy: '123e4567-e89b-12d3-a456-426614174001'
+                  splitMethod: 'equal'
+                  category: 'Food'
+                  note: 'Italian restaurant'
+                  splits:
+                    - userId: '123e4567-e89b-12d3-a456-426614174001'
+                      amount: 50.00
+                    - userId: '123e4567-e89b-12d3-a456-426614174002'
+                      amount: 50.00
+                    - userId: '123e4567-e89b-12d3-a456-426614174003'
+                      amount: 50.00
+              percentageSplit:
+                summary: Percentage-based split
+                value:
+                  groupId: '123e4567-e89b-12d3-a456-426614174000'
+                  title: 'Hotel Booking'
+                  amount: 300.00
+                  paidBy: '123e4567-e89b-12d3-a456-426614174001'
+                  splitMethod: 'percentage'
+                  category: 'Accommodation'
+                  splits:
+                    - userId: '123e4567-e89b-12d3-a456-426614174001'
+                      amount: 150.00
+                      percentage: 50.00
+                    - userId: '123e4567-e89b-12d3-a456-426614174002'
+                      amount: 90.00
+                      percentage: 30.00
+                    - userId: '123e4567-e89b-12d3-a456-426614174003'
+                      amount: 60.00
+                      percentage: 20.00
+              customSplit:
+                summary: Custom split amounts
+                value:
+                  groupId: '123e4567-e89b-12d3-a456-426614174000'
+                  title: 'Grocery Shopping'
+                  amount: 85.50
+                  paidBy: '123e4567-e89b-12d3-a456-426614174001'
+                  splitMethod: 'custom'
+                  category: 'Groceries'
+                  splits:
+                    - userId: '123e4567-e89b-12d3-a456-426614174001'
+                      amount: 30.00
+                    - userId: '123e4567-e89b-12d3-a456-426614174002'
+                      amount: 55.50
+      responses:
+        '201':
+          description: Expense created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          description: Bad request - validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFields:
+                  value:
+                    error: 'groupId, amount, paidBy, splitMethod, and splits are required'
+                invalidSplit:
+                  value:
+                    error: 'Split amounts must equal total amount'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/expenses/group/{groupId}:
+    get:
+      tags:
+        - Expenses
+      summary: Get group expenses
+      description: Retrieve all expenses for a specific group with pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The group ID
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Number of expenses to return
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Number of expenses to skip
+      responses:
+        '200':
+          description: List of expenses retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Expense'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/expenses/{expenseId}:
+    get:
+      tags:
+        - Expenses
+      summary: Get expense details
+      description: Retrieve detailed information about a specific expense
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expenseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The expense ID
+      responses:
+        '200':
+          description: Expense details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Expense not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      tags:
+        - Expenses
+      summary: Update expense
+      description: Update expense details (title, category, note, date)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expenseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The expense ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateExpenseRequest'
+      responses:
+        '200':
+          description: Expense updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not authorized to update this expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - Expenses
+      summary: Delete expense
+      description: Soft delete an expense
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: expenseId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The expense ID
+      responses:
+        '200':
+          description: Expense deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Expense deleted successfully'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not authorized to delete this expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/expenses/group/{groupId}/balances:
+    get:
+      tags:
+        - Expenses
+      summary: Calculate group balances
+      description: Calculate the current balance for each member in the group
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The group ID
+      responses:
+        '200':
+          description: Balances calculated successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Balance'
+              example:
+                - userId: '123e4567-e89b-12d3-a456-426614174001'
+                  userName: 'John Doe'
+                  balance: 50.00
+                - userId: '123e4567-e89b-12d3-a456-426614174002'
+                  userName: 'Jane Smith'
+                  balance: -25.00
+                - userId: '123e4567-e89b-12d3-a456-426614174003'
+                  userName: 'Bob Johnson'
+                  balance: -25.00
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

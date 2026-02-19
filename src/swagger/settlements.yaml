@@ -1,0 +1,256 @@
+paths:
+  /api/settlements/group/{groupId}/simplified:
+    get:
+      tags:
+        - Settlements
+      summary: Get simplified settlements
+      description: Calculate the optimal (simplified) settlements to balance the group using a greedy algorithm
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The group ID
+      responses:
+        '200':
+          description: Simplified settlements calculated successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimplifiedSettlement'
+              example:
+                - from: '123e4567-e89b-12d3-a456-426614174002'
+                  fromName: 'Jane Smith'
+                  to: '123e4567-e89b-12d3-a456-426614174001'
+                  toName: 'John Doe'
+                  amount: 25.00
+                - from: '123e4567-e89b-12d3-a456-426614174003'
+                  fromName: 'Bob Johnson'
+                  to: '123e4567-e89b-12d3-a456-426614174001'
+                  toName: 'John Doe'
+                  amount: 25.00
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/settlements:
+    post:
+      tags:
+        - Settlements
+      summary: Record a settlement
+      description: |
+        Record a payment between two members. Supports two confirmation modes:
+        - Two-way: Debtor records → Status: pending → Creditor confirms
+        - One-way: Creditor records → Status: auto-confirmed
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordSettlementRequest'
+            examples:
+              debtorRecords:
+                summary: Debtor records payment (requires confirmation)
+                value:
+                  groupId: '123e4567-e89b-12d3-a456-426614174000'
+                  fromUserId: '123e4567-e89b-12d3-a456-426614174002'
+                  toUserId: '123e4567-e89b-12d3-a456-426614174001'
+                  amount: 25.00
+                  note: 'Cash payment'
+              creditorRecords:
+                summary: Creditor records payment (auto-confirmed)
+                value:
+                  groupId: '123e4567-e89b-12d3-a456-426614174000'
+                  fromUserId: '123e4567-e89b-12d3-a456-426614174002'
+                  toUserId: '123e4567-e89b-12d3-a456-426614174001'
+                  amount: 25.00
+                  note: 'Bank transfer received'
+      responses:
+        '201':
+          description: Settlement recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settlement'
+        '400':
+          description: Bad request - validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFields:
+                  value:
+                    error: 'groupId, fromUserId, toUserId, and amount are required'
+                invalidAmount:
+                  value:
+                    error: 'Amount must be greater than 0'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/settlements/group/{groupId}:
+    get:
+      tags:
+        - Settlements
+      summary: Get group settlements history
+      description: Retrieve all recorded settlements for a specific group
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The group ID
+      responses:
+        '200':
+          description: Settlements history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Settlement'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not a member of this group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/settlements/{settlementId}/confirm:
+    patch:
+      tags:
+        - Settlements
+      summary: Confirm a settlement
+      description: Confirm a pending settlement (creditor only). Changes status from 'pending' to 'confirmed'.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: settlementId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The settlement ID
+      responses:
+        '200':
+          description: Settlement confirmed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settlement'
+        '400':
+          description: Bad request - settlement already confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                alreadyConfirmed:
+                  value:
+                    error: 'Settlement already confirmed'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - only the creditor can confirm
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notCreditor:
+                  value:
+                    error: 'Only the creditor can confirm this settlement'
+
+  /api/settlements/{settlementId}:
+    delete:
+      tags:
+        - Settlements
+      summary: Delete a settlement
+      description: Delete a settlement record (recorder or admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: settlementId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The settlement ID
+      responses:
+        '200':
+          description: Settlement deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'Settlement deleted successfully'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not authorized to delete this settlement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

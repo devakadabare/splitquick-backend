@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  isGuest      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  groupMemberships GroupMember[]
+  expensesPaid     Expense[]     @relation("PaidBy")
+  expenseSplits    ExpenseSplit[]
+  settlementsFrom  Settlement[]  @relation("From")
+  settlementsTo    Settlement[]  @relation("To")
+
+  @@index([email])
+}
+
+model Group {
+  id        String    @id @default(uuid())
+  name      String
+  currency  String
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+
+  @@index([createdBy])
+  @@index([deletedAt])
+}
+
+model GroupMember {
+  groupId    String
+  userId     String
+  role       String   @default("member")
+  joinedAt   DateTime @default(now())
+  isGuest    Boolean  @default(false)
+  guestEmail String?
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id])
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  groupId     String
+  title       String
+  amount      Decimal   @db.Decimal(10, 2)
+  paidBy      String
+  splitMethod String
+  category    String?
+  note        String?
+  date        DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  group  Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payer  User           @relation("PaidBy", fields: [paidBy], references: [id])
+  splits ExpenseSplit[]
+
+  @@index([groupId])
+  @@index([paidBy])
+  @@index([createdAt])
+  @@index([groupId, deletedAt])
+}
+
+model ExpenseSplit {
+  id         String   @id @default(uuid())
+  expenseId  String
+  userId     String
+  amount     Decimal  @db.Decimal(10, 2)
+  percentage Decimal? @db.Decimal(5, 2)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([expenseId])
+  @@index([userId])
+}
+
+model Settlement {
+  id          String    @id @default(uuid())
+  groupId     String
+  fromUserId  String
+  toUserId    String
+  amount      Decimal   @db.Decimal(10, 2)
+  note        String?
+  status      String    @default("pending")
+  recordedBy  String
+  recordedAt  DateTime  @default(now())
+  confirmedAt DateTime?
+
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromUser User  @relation("From", fields: [fromUserId], references: [id])
+  toUser   User  @relation("To", fields: [toUserId], references: [id])
+
+  @@index([groupId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+}
