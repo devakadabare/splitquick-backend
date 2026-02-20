@@ -34,6 +34,21 @@ export class AuthController {
     }
   }
 
+  async firebaseLogin(req: Request, res: Response) {
+    try {
+      const { token: firebaseToken } = req.body;
+
+      if (!firebaseToken) {
+        return res.status(400).json({ error: 'Firebase token required' });
+      }
+
+      const result = await authService.firebaseLogin(firebaseToken);
+      return res.status(200).json(result);
+    } catch (error: any) {
+      return res.status(401).json({ error: error.message });
+    }
+  }
+
   async getMe(req: Request, res: Response) {
     try {
       const userId = (req as any).user.id;

@@ -1,8 +1,47 @@
 import bcrypt from 'bcrypt';
 import prisma from '../../config/database';
 import { generateToken } from '../../config/jwt';
+import { firebaseAuth } from '../../config/firebase';
 
 export class AuthService {
+  async firebaseLogin(firebaseToken: string) {
+    const decodedToken = await firebaseAuth.verifyIdToken(firebaseToken);
+    const { email, name, uid } = decodedToken;
+
+    if (!email) {
+      throw new Error('Email not available from Firebase');
+    }
+
+    let user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          name: name || email.split('@')[0],
+          email,
+        }
+      });
+    } else if (user.isGuest) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { name: name || user.name, isGuest: false }
+      });
+    }
+
+    const token = generateToken(user.id, user.email);
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      },
+      token
+    };
+  }
+
   async register(name: string, email: string, password: string) {
     const existingUser = await prisma.user.findUnique({
       where: { email }
