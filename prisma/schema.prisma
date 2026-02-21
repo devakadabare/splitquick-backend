@@ -21,8 +21,24 @@ model User {
   expenseSplits    ExpenseSplit[]
   settlementsFrom  Settlement[]  @relation("From")
   settlementsTo    Settlement[]  @relation("To")
+  friendshipsA     Friendship[]  @relation("FriendshipA")
+  friendshipsB     Friendship[]  @relation("FriendshipB")
 
   @@index([email])
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userAId   String
+  userBId   String
+  createdAt DateTime @default(now())
+
+  userA User @relation("FriendshipA", fields: [userAId], references: [id])
+  userB User @relation("FriendshipB", fields: [userBId], references: [id])
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
 }
 
 model Group {

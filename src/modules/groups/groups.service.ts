@@ -1,4 +1,7 @@
 import prisma from '../../config/database';
+import { FriendsService } from '../friends/friends.service';
+
+const friendsService = new FriendsService();
 
 export class GroupsService {
   async createGroup(name: string, currency: string, createdBy: string) {
@@ -173,6 +176,9 @@ export class GroupsService {
         }
       }
     });
+
+    // Auto-add friendship between the requestor and the new member
+    await friendsService.addFriend(requestedBy, targetUserId);
 
     return newMember;
   }

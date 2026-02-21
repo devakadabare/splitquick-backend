@@ -6,6 +6,7 @@ import authRoutes from './modules/auth/auth.routes';
 import groupsRoutes from './modules/groups/groups.routes';
 import expensesRoutes from './modules/expenses/expenses.routes';
 import settlementsRoutes from './modules/settlements/settlements.routes';
+import friendsRoutes from './modules/friends/friends.routes';
 import { swaggerSpec } from './config/swagger';
 
 const app = express();
@@ -49,6 +50,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupsRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/settlements', settlementsRoutes);
+app.use('/api/friends', friendsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
