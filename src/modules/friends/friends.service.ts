@@ -1,5 +1,8 @@
 import prisma from '../../config/database';
 import { Decimal } from '@prisma/client/runtime/library';
+import { ExpensesService } from '../expenses/expenses.service';
+
+const expensesService = new ExpensesService();
 
 export class FriendsService {
   // Ensure canonical ordering: userAId < userBId for unique constraint
@@ -99,7 +102,6 @@ export class FriendsService {
 
     if (!friend) throw new Error('Friend not found');
 
-    let netBalance = 0;
     const groupBreakdown: Array<{
       groupId: string;
       groupName: string;
@@ -136,15 +138,23 @@ export class FriendsService {
           currency: group.currency,
           balance: Math.round(pairBalance * 100) / 100,
         });
-        netBalance += pairBalance;
       }
     }
+
+    // Aggregate balances by currency
+    const currencyMap: Record<string, number> = {};
+    for (const g of groupBreakdown) {
+      currencyMap[g.currency] = (currencyMap[g.currency] || 0) + g.balance;
+    }
+    const currencyBalances = Object.entries(currencyMap)
+      .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }))
+      .filter((cb) => Math.abs(cb.amount) > 0.01);
 
     return {
       friendId: friend.id,
       friendName: friend.name,
       friendEmail: friend.email,
-      netBalance: Math.round(netBalance * 100) / 100,
+      currencyBalances,
       groupBreakdown,
     };
   }
@@ -163,30 +173,36 @@ export class FriendsService {
     userId: string,
     friendId: string,
     totalAmount: number,
-    note?: string
+    note?: string,
+    currency?: string
   ) {
     const balanceData = await this.getFriendBalances(userId, friendId);
 
-    if (Math.abs(balanceData.netBalance) < 0.01) {
-      throw new Error('No outstanding balance with this friend');
-    }
+    // Filter groups by currency if specified
+    const relevantGroups = currency
+      ? balanceData.groupBreakdown.filter((g) => g.currency === currency)
+      : balanceData.groupBreakdown;
 
-    if (totalAmount > Math.abs(balanceData.netBalance) + 0.01) {
+    // Calculate net balance for the relevant groups
+    const netBalance = relevantGroups.reduce((sum, g) => sum + g.balance, 0);
+    const absNetBalance = Math.round(Math.abs(netBalance) * 100) / 100;
+
+    if (absNetBalance < 0.01) {
       throw new Error(
-        `Settlement amount (${totalAmount}) exceeds net balance (${Math.abs(balanceData.netBalance).toFixed(2)})`
+        currency
+          ? `No outstanding ${currency} balance with this friend`
+          : 'No outstanding balance with this friend'
       );
     }
 
-    // Proportional settlement across ALL groups (both directions).
-    // Each group gets its balance reduced by the same ratio, and the
-    // settlement direction matches that group's balance direction.
-    //
-    // Example: Group A user owes friend 5000, Group B friend owes user 1500
-    //   net = -3500. Settling 3500 → ratio = 1.0
-    //   Group A: settlement user→friend 5000 (zeros it out)
-    //   Group B: settlement friend→user 1500 (zeros it out)
-    //   Net cash: 5000 - 1500 = 3500 ✓
-    const ratio = totalAmount / Math.abs(balanceData.netBalance);
+    if (totalAmount > absNetBalance + 0.01) {
+      throw new Error(
+        `Settlement amount (${totalAmount}) exceeds net balance (${absNetBalance.toFixed(2)})`
+      );
+    }
+
+    // Proportional settlement across relevant groups (both directions).
+    const ratio = totalAmount / absNetBalance;
 
     const allocations: Array<{
       groupId: string;
@@ -196,7 +212,7 @@ export class FriendsService {
       amount: number;
     }> = [];
 
-    for (const group of balanceData.groupBreakdown) {
+    for (const group of relevantGroups) {
       const settleAmount = Math.round(Math.abs(group.balance) * ratio * 100) / 100;
       if (settleAmount < 0.01) continue;
 
@@ -235,5 +251,121 @@ export class FriendsService {
       settlementId: settlement.id,
       amount: Number(settlement.amount),
     }));
+  }
+
+  async findOrCreateDirectGroup(userId: string, friendId: string, currency: string) {
+    // Look for an existing direct group between these two users
+    const existing = await prisma.group.findFirst({
+      where: {
+        isDirect: true,
+        deletedAt: null,
+        AND: [
+          { members: { some: { userId } } },
+          { members: { some: { userId: friendId } } },
+        ],
+      },
+      include: {
+        members: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+    });
+
+    if (existing) return existing;
+
+    // Create a new direct group
+    const group = await prisma.group.create({
+      data: {
+        name: 'Direct',
+        currency,
+        createdBy: userId,
+        isDirect: true,
+        members: {
+          createMany: {
+            data: [
+              { userId, role: 'admin', isGuest: false },
+              { userId: friendId, role: 'member', isGuest: false },
+            ],
+          },
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+    });
+
+    return group;
+  }
+
+  async createDirectExpense(
+    userId: string,
+    friendId: string,
+    data: {
+      title: string;
+      amount: number;
+      paidBy: 'me' | 'friend';
+      currency: string;
+      category?: string;
+      note?: string;
+      date?: string;
+    }
+  ) {
+    // Verify friendship exists
+    const [userAId, userBId] = this.canonical(userId, friendId);
+    const friendship = await prisma.friendship.findUnique({
+      where: { userAId_userBId: { userAId, userBId } },
+    });
+
+    if (!friendship) {
+      throw new Error('You are not friends with this user');
+    }
+
+    const group = await this.findOrCreateDirectGroup(userId, friendId, data.currency);
+
+    const payerId = data.paidBy === 'me' ? userId : friendId;
+    const splitAmount = data.amount / 2;
+
+    const expense = await expensesService.createExpense(
+      {
+        groupId: group.id,
+        title: data.title,
+        amount: data.amount,
+        paidBy: payerId,
+        splitMethod: 'equal',
+        category: data.category,
+        note: data.note,
+        date: data.date ? new Date(data.date) : undefined,
+        splits: [
+          { userId, amount: splitAmount },
+          { userId: friendId, amount: splitAmount },
+        ],
+      },
+      userId
+    );
+
+    return expense;
+  }
+
+  async getDirectExpenses(userId: string, friendId: string) {
+    const group = await prisma.group.findFirst({
+      where: {
+        isDirect: true,
+        deletedAt: null,
+        AND: [
+          { members: { some: { userId } } },
+          { members: { some: { userId: friendId } } },
+        ],
+      },
+    });
+
+    if (!group) return [];
+
+    return expensesService.getGroupExpenses(group.id, userId);
   }
 }

@@ -20,4 +20,8 @@ router.get('/balances', (req, res) => friendsController.getFriendsWithBalances(r
 // Settle with a friend across groups
 router.post('/:friendId/settle', (req, res) => friendsController.settleFriend(req, res));
 
+// Direct expenses with a friend (no group required)
+router.post('/:friendId/expenses', (req, res) => friendsController.createDirectExpense(req, res));
+router.get('/:friendId/expenses', (req, res) => friendsController.getDirectExpenses(req, res));
+
 export default router;

@@ -243,7 +243,7 @@ export class ExpensesService {
   }
 
   async calculateBalances(groupId: string, userId: string) {
-    // Verify user is member
+    // Verify user is member and get group currency
     const membership = await prisma.groupMember.findUnique({
       where: {
         groupId_userId: {
@@ -256,6 +256,11 @@ export class ExpensesService {
     if (!membership) {
       throw new Error('User is not a member of this group');
     }
+
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      select: { currency: true }
+    });
 
     // Get all expenses and settlements
     const expenses = await prisma.expense.findMany({
@@ -324,6 +329,7 @@ export class ExpensesService {
 
     return {
       groupId,
+      currency: group?.currency || 'USD',
       balances: formattedBalances,
       totalExpenses: expenses.reduce((sum, exp) => sum + Number(exp.amount), 0),
       expenseCount: expenses.length

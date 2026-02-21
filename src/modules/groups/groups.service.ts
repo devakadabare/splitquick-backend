@@ -73,6 +73,7 @@ export class GroupsService {
     const groups = await prisma.group.findMany({
       where: {
         deletedAt: null,
+        isDirect: false,
         members: {
           some: {
             userId: userId

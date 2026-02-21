@@ -39,7 +39,7 @@ export class FriendsController {
     try {
       const userId = (req as any).user.id;
       const { friendId } = req.params;
-      const { amount, note } = req.body;
+      const { amount, note, currency } = req.body;
 
       if (!amount || amount <= 0) {
         return res.status(400).json({ error: 'A positive amount is required' });
@@ -49,9 +49,56 @@ export class FriendsController {
         userId,
         friendId,
         parseFloat(amount),
-        note
+        note,
+        currency
       );
       return res.status(201).json({ settlements: results });
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+  }
+
+  async createDirectExpense(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user.id;
+      const { friendId } = req.params;
+      const { title, amount, paidBy, currency, category, note, date } = req.body;
+
+      if (!title || !amount || !paidBy || !currency) {
+        return res.status(400).json({
+          error: 'title, amount, paidBy, and currency are required',
+        });
+      }
+
+      if (!['me', 'friend'].includes(paidBy)) {
+        return res.status(400).json({
+          error: 'paidBy must be "me" or "friend"',
+        });
+      }
+
+      const expense = await friendsService.createDirectExpense(userId, friendId, {
+        title,
+        amount: parseFloat(amount),
+        paidBy,
+        currency,
+        category,
+        note,
+        date,
+      });
+
+      return res.status(201).json(expense);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+  }
+
+  async getDirectExpenses(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user.id;
+      const { friendId } = req.params;
+
+      const expenses = await friendsService.getDirectExpenses(userId, friendId);
+      return res.json(expenses);
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
     }

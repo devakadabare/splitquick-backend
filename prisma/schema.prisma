@@ -46,6 +46,7 @@ model Group {
   name      String
   currency  String
   createdBy String
+  isDirect  Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -56,6 +57,7 @@ model Group {
 
   @@index([createdBy])
   @@index([deletedAt])
+  @@index([isDirect])
 }
 
 model GroupMember {
