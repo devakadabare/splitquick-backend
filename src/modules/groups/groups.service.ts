@@ -255,7 +255,7 @@ export class GroupsService {
     return updatedMember;
   }
 
-  async deleteGroup(groupId: string, userId: string) {
+  async deleteGroup(groupId: string, userId: string, force = false) {
     // Check if user is admin
     const membership = await prisma.groupMember.findUnique({
       where: {
@@ -301,8 +301,27 @@ export class GroupsService {
 
     const hasOutstandingBalances = Object.values(balances).some(b => Math.abs(b) > 0.01);
 
-    if (hasOutstandingBalances) {
-      throw new Error('Cannot delete group with outstanding balances. Please settle all debts first.');
+    if (hasOutstandingBalances && !force) {
+      // Check for pending settlements too
+      const pendingSettlements = await prisma.settlement.count({
+        where: { groupId, status: 'pending' }
+      });
+
+      const balanceDetails = Object.entries(balances)
+        .filter(([, b]) => Math.abs(b) > 0.01)
+        .map(([uid, b]) => {
+          const member = members.find(m => m.userId === uid);
+          return { userId: uid, balance: Math.round(b * 100) / 100 };
+        });
+
+      throw new Error(
+        JSON.stringify({
+          code: 'OUTSTANDING_BALANCES',
+          message: 'Group has outstanding balances. You can force delete to clear all data.',
+          balances: balanceDetails,
+          pendingSettlements,
+        })
+      );
     }
 
     // Soft delete

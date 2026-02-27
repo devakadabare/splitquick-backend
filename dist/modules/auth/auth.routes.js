@@ -7,5 +7,6 @@ const router = (0, express_1.Router)();
 const authController = new auth_controller_1.AuthController();
 router.post('/register', (req, res) => authController.register(req, res));
 router.post('/login', (req, res) => authController.login(req, res));
+router.post('/firebase-login', (req, res) => authController.firebaseLogin(req, res));
 router.get('/me', auth_1.authenticate, (req, res) => authController.getMe(req, res));
 exports.default = router;

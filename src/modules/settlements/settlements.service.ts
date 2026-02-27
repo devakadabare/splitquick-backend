@@ -109,6 +109,47 @@ export class SettlementsService {
     };
   }
 
+  /**
+   * Calculate the net pairwise balance between two users in a group.
+   * Returns positive if fromUser owes toUser, negative otherwise.
+   */
+  private async getPairwiseBalance(groupId: string, fromUserId: string, toUserId: string): Promise<number> {
+    const expenses = await prisma.expense.findMany({
+      where: { groupId, deletedAt: null },
+      include: { splits: true },
+    });
+
+    const confirmedSettlements = await prisma.settlement.findMany({
+      where: { groupId, status: 'confirmed' },
+    });
+
+    // Calculate net balance: positive means fromUser owes toUser
+    let balance = 0;
+
+    for (const expense of expenses) {
+      if (expense.paidBy === toUserId) {
+        const fromSplit = expense.splits.find(s => s.userId === fromUserId);
+        if (fromSplit) balance += Number(fromSplit.amount);
+      } else if (expense.paidBy === fromUserId) {
+        const toSplit = expense.splits.find(s => s.userId === toUserId);
+        if (toSplit) balance -= Number(toSplit.amount);
+      }
+    }
+
+    for (const settlement of confirmedSettlements) {
+      // fromUser paid toUser → reduces what fromUser owes
+      if (settlement.fromUserId === fromUserId && settlement.toUserId === toUserId) {
+        balance -= Number(settlement.amount);
+      }
+      // toUser paid fromUser → increases what fromUser owes
+      if (settlement.fromUserId === toUserId && settlement.toUserId === fromUserId) {
+        balance += Number(settlement.amount);
+      }
+    }
+
+    return balance;
+  }
+
   async recordSettlement(data: RecordSettlementData, recordedBy: string) {
     const { groupId, fromUserId, toUserId, amount, note } = data;
 
@@ -147,6 +188,36 @@ export class SettlementsService {
 
     if (!fromMember || !toMember) {
       throw new Error('Invalid users for settlement');
+    }
+
+    // Check for existing pending settlement between these two users in this group
+    const existingPending = await prisma.settlement.findFirst({
+      where: {
+        groupId,
+        status: 'pending',
+        OR: [
+          { fromUserId, toUserId },
+          { fromUserId: toUserId, toUserId: fromUserId },
+        ],
+      },
+    });
+
+    if (existingPending) {
+      throw new Error('There is already a pending settlement between these users. Please confirm or delete it first.');
+    }
+
+    // Validate settlement amount against actual balance
+    const pairBalance = await this.getPairwiseBalance(groupId, fromUserId, toUserId);
+    // pairBalance > 0 means fromUser owes toUser
+    // If pairBalance <= 0, fromUser doesn't owe toUser anything
+    if (pairBalance <= 0.01) {
+      throw new Error('This user does not owe anything to the other user in this group.');
+    }
+
+    if (amount > pairBalance + 0.01) {
+      throw new Error(
+        `Settlement amount (${amount.toFixed(2)}) exceeds the outstanding balance (${pairBalance.toFixed(2)}).`
+      );
     }
 
     // Determine initial status based on who is recording
@@ -216,6 +287,27 @@ export class SettlementsService {
     // Already confirmed
     if (settlement.status === 'confirmed') {
       throw new Error('Settlement already confirmed');
+    }
+
+    // Validate that confirming won't cause over-settlement
+    const pairBalance = await this.getPairwiseBalance(
+      settlement.groupId,
+      settlement.fromUserId,
+      settlement.toUserId
+    );
+
+    const settlementAmount = Number(settlement.amount);
+
+    if (pairBalance <= 0.01) {
+      throw new Error(
+        'This settlement can no longer be confirmed because the balance has already been settled. You can delete this pending settlement.'
+      );
+    }
+
+    if (settlementAmount > pairBalance + 0.01) {
+      throw new Error(
+        `Confirming this settlement (${settlementAmount.toFixed(2)}) would exceed the outstanding balance (${pairBalance.toFixed(2)}). Please delete this settlement and create a corrected one.`
+      );
     }
 
     const updatedSettlement = await prisma.settlement.update({

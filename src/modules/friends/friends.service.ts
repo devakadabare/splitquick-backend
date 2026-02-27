@@ -201,6 +201,25 @@ export class FriendsService {
       );
     }
 
+    // Check for pending settlements in any of the relevant groups between these users
+    const groupIds = relevantGroups.map(g => g.groupId);
+    const pendingSettlements = await prisma.settlement.findMany({
+      where: {
+        groupId: { in: groupIds },
+        status: 'pending',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId },
+        ],
+      },
+    });
+
+    if (pendingSettlements.length > 0) {
+      throw new Error(
+        'There are pending settlements between you and this friend. Please confirm or delete them before settling via the friend tab.'
+      );
+    }
+
     // Proportional settlement across relevant groups (both directions).
     const ratio = totalAmount / absNetBalance;
 

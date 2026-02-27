@@ -93,10 +93,20 @@ export class GroupsController {
     try {
       const { groupId } = req.params;
       const userId = (req as any).user.id;
+      const force = req.query.force === 'true';
 
-      const result = await groupsService.deleteGroup(groupId, userId);
+      const result = await groupsService.deleteGroup(groupId, userId, force);
       return res.json(result);
     } catch (error: any) {
+      // Try to parse structured error for outstanding balances
+      try {
+        const parsed = JSON.parse(error.message);
+        if (parsed.code === 'OUTSTANDING_BALANCES') {
+          return res.status(409).json(parsed);
+        }
+      } catch {
+        // Not a structured error, fall through
+      }
       return res.status(400).json({ error: error.message });
     }
   }

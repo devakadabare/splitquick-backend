@@ -74,7 +74,13 @@ class ExpensesService {
                         email: true
                     }
                 },
-                splits: true
+                splits: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true, email: true }
+                        }
+                    }
+                }
             }
         });
         return expense;
@@ -105,7 +111,13 @@ class ExpensesService {
                         email: true
                     }
                 },
-                splits: true
+                splits: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true, email: true }
+                        }
+                    }
+                }
             },
             orderBy: {
                 date: 'desc'
@@ -126,7 +138,13 @@ class ExpensesService {
                         email: true
                     }
                 },
-                splits: true,
+                splits: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true, email: true }
+                        }
+                    }
+                },
                 group: {
                     include: {
                         members: true
@@ -164,13 +182,26 @@ class ExpensesService {
                         email: true
                     }
                 },
-                splits: true
+                splits: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true, email: true }
+                        }
+                    }
+                }
             }
         });
         return updatedExpense;
     }
     async deleteExpense(expenseId, userId) {
         const expense = await this.getExpenseById(expenseId, userId);
+        // Only the expense creator or a group admin can delete
+        const isExpenseCreator = expense.paidBy === userId;
+        const membership = expense.group.members.find(m => m.userId === userId);
+        const isGroupAdmin = membership?.role === 'admin';
+        if (!isExpenseCreator && !isGroupAdmin) {
+            throw new Error('Only the expense creator or group admin can delete this expense');
+        }
         // Soft delete
         await database_1.default.expense.update({
             where: { id: expenseId },
@@ -181,7 +212,7 @@ class ExpensesService {
         return { message: 'Expense deleted successfully' };
     }
     async calculateBalances(groupId, userId) {
-        // Verify user is member
+        // Verify user is member and get group currency
         const membership = await database_1.default.groupMember.findUnique({
             where: {
                 groupId_userId: {
@@ -193,6 +224,10 @@ class ExpensesService {
         if (!membership) {
             throw new Error('User is not a member of this group');
         }
+        const group = await database_1.default.group.findUnique({
+            where: { id: groupId },
+            select: { currency: true }
+        });
         // Get all expenses and settlements
         const expenses = await database_1.default.expense.findMany({
             where: {
@@ -252,6 +287,7 @@ class ExpensesService {
         }));
         return {
             groupId,
+            currency: group?.currency || 'USD',
             balances: formattedBalances,
             totalExpenses: expenses.reduce((sum, exp) => sum + Number(exp.amount), 0),
             expenseCount: expenses.length

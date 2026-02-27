@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GroupsService = void 0;
 const database_1 = __importDefault(require("../../config/database"));
+const friends_service_1 = require("../friends/friends.service");
+const friendsService = new friends_service_1.FriendsService();
 class GroupsService {
     async createGroup(name, currency, createdBy) {
         const group = await database_1.default.group.create({
@@ -70,6 +72,7 @@ class GroupsService {
         const groups = await database_1.default.group.findMany({
             where: {
                 deletedAt: null,
+                isDirect: false,
                 members: {
                     some: {
                         userId: userId
@@ -117,12 +120,22 @@ class GroupsService {
         if (!membership || membership.role !== 'admin') {
             throw new Error('Only admins can add members');
         }
-        // Check if user exists
+        // Check if user exists, or create a guest user
         let targetUser = await database_1.default.user.findUnique({
             where: { email }
         });
         const isGuest = !targetUser;
-        const targetUserId = targetUser?.id || userId; // Use temporary ID for guest
+        if (!targetUser) {
+            // Create a guest user placeholder
+            targetUser = await database_1.default.user.create({
+                data: {
+                    email,
+                    name: email.split('@')[0],
+                    isGuest: true,
+                }
+            });
+        }
+        const targetUserId = targetUser.id;
         // Check if already a member
         const existingMember = await database_1.default.groupMember.findUnique({
             where: {
@@ -153,6 +166,8 @@ class GroupsService {
                 }
             }
         });
+        // Auto-add friendship between the requestor and the new member
+        await friendsService.addFriend(requestedBy, targetUserId);
         return newMember;
     }
     async removeMember(groupId, memberUserId, requestedBy) {
@@ -229,6 +244,33 @@ class GroupsService {
         });
         if (!membership || membership.role !== 'admin') {
             throw new Error('Only admins can delete groups');
+        }
+        // Check for outstanding balances
+        const expenses = await database_1.default.expense.findMany({
+            where: { groupId, deletedAt: null },
+            include: { splits: true }
+        });
+        const settlements = await database_1.default.settlement.findMany({
+            where: { groupId, status: 'confirmed' }
+        });
+        const members = await database_1.default.groupMember.findMany({
+            where: { groupId }
+        });
+        const balances = {};
+        members.forEach(m => { balances[m.userId] = 0; });
+        expenses.forEach(expense => {
+            balances[expense.paidBy] += Number(expense.amount);
+            expense.splits.forEach(split => {
+                balances[split.userId] -= Number(split.amount);
+            });
+        });
+        settlements.forEach(settlement => {
+            balances[settlement.fromUserId] += Number(settlement.amount);
+            balances[settlement.toUserId] -= Number(settlement.amount);
+        });
+        const hasOutstandingBalances = Object.values(balances).some(b => Math.abs(b) > 0.01);
+        if (hasOutstandingBalances) {
+            throw new Error('Cannot delete group with outstanding balances. Please settle all debts first.');
         }
         // Soft delete
         const group = await database_1.default.group.update({
