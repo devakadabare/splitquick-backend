@@ -188,32 +188,60 @@ export class ExpensesService {
   async updateExpense(expenseId: string, data: Partial<CreateExpenseData>, userId: string) {
     const expense = await this.getExpenseById(expenseId, userId);
 
-    // Update expense
-    const updatedExpense = await prisma.expense.update({
-      where: { id: expenseId },
-      data: {
-        title: data.title,
-        amount: data.amount ? new Decimal(data.amount) : undefined,
-        category: data.category,
-        note: data.note,
-        date: data.date
-      },
-      include: {
-        payer: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+    const newAmount = data.amount ? data.amount : Number(expense.amount);
+    const oldAmount = Number(expense.amount);
+    const amountChanged = data.amount && Math.abs(newAmount - oldAmount) > 0.001;
+
+    // Update expense and recalculate splits if amount changed
+    const updatedExpense = await prisma.$transaction(async (tx) => {
+      const updated = await tx.expense.update({
+        where: { id: expenseId },
+        data: {
+          title: data.title,
+          amount: data.amount ? new Decimal(data.amount) : undefined,
+          category: data.category,
+          note: data.note,
+          date: data.date
         },
-        splits: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true }
+      });
+
+      // Recalculate splits when amount changes
+      if (amountChanged) {
+        const existingSplits = expense.splits;
+
+        for (const split of existingSplits) {
+          const splitPercentage = Number(split.percentage) || (Number(split.amount) / oldAmount * 100);
+          const newSplitAmount = (newAmount * splitPercentage) / 100;
+
+          await tx.expenseSplit.update({
+            where: { id: split.id },
+            data: {
+              amount: new Decimal(parseFloat(newSplitAmount.toFixed(2))),
+              percentage: new Decimal(parseFloat(splitPercentage.toFixed(2))),
+            },
+          });
+        }
+      }
+
+      return tx.expense.findUnique({
+        where: { id: expenseId },
+        include: {
+          payer: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          splits: {
+            include: {
+              user: {
+                select: { id: true, name: true, email: true }
+              }
             }
           }
         }
-      }
+      });
     });
 
     return updatedExpense;
