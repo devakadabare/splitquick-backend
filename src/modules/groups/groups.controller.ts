@@ -53,7 +53,12 @@ export class GroupsController {
         return res.status(400).json({ error: 'Email is required' });
       }
 
-      const member = await groupsService.addMember(groupId, userId, email, userId);
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: 'Invalid email address' });
+      }
+
+      const member = await groupsService.addMember(groupId, userId, email.toLowerCase().trim(), userId);
       return res.status(201).json(member);
     } catch (error: any) {
       return res.status(400).json({ error: error.message });

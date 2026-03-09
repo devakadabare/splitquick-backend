@@ -1,5 +1,6 @@
 import prisma from '../../config/database';
 import { FriendsService } from '../friends/friends.service';
+import { sendGroupInvitationEmail } from '../../utils/email';
 
 const friendsService = new FriendsService();
 
@@ -125,6 +126,16 @@ export class GroupsService {
       throw new Error('Only admins can add members');
     }
 
+    const inviter = await prisma.user.findUnique({
+      where: { id: requestedBy },
+      select: { name: true }
+    });
+
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      select: { name: true }
+    });
+
     // Check if user exists, or create a guest user
     let targetUser = await prisma.user.findUnique({
       where: { email }
@@ -180,6 +191,14 @@ export class GroupsService {
 
     // Auto-add friendship between the requestor and the new member
     await friendsService.addFriend(requestedBy, targetUserId);
+
+    // Send invitation email (fire-and-forget, failure does not block response)
+    sendGroupInvitationEmail({
+      toEmail: email,
+      groupName: group?.name || 'a group',
+      inviterName: inviter?.name || 'Someone',
+      isGuest,
+    });
 
     return newMember;
   }
