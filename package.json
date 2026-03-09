@@ -29,6 +29,7 @@
     "firebase-admin": "^13.6.1",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "resend": "^6.9.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
